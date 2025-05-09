@@ -1,0 +1,77 @@
+name: Deploy Gijiro3 (Web & Function)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # ───────────────────────────────────────────────────────────
+  # 1) Login to Azure
+  # ───────────────────────────────────────────────────────────
+  login:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+  # ───────────────────────────────────────────────────────────
+  # 2) Deploy Web App
+  # ───────────────────────────────────────────────────────────
+  webapp:
+    needs: login
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+          # ルート直下に Flask アプリがある場合は '.' で OK
+          package: .
+
+  # ───────────────────────────────────────────────────────────
+  # 3) Deploy Function App
+  # ───────────────────────────────────────────────────────────
+  functionapp:
+    needs: login
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install function requirements
+        run: |
+          cd ProcessAudioFunction
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+
+      - name: Deploy to Azure Function
+        uses: azure/functions-action@v1
+        with:
+          app-name: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
+          package: ProcessAudioFunction

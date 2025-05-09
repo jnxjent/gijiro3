@@ -1,0 +1,32 @@
+﻿# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+
+# --- 仮想環境 ---
+.venv/
+env/
+venv/
+
+# --- IDE / 編集ツール ---
+.vscode/
+.idea/
+
+# --- 機密 ---
+.env
+*.key
+*.pem
+
+# --- ログ / 一時 ---
+*.log
+*.tmp
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- バイナリ(元ファイル)  ---
+ffmpeg/
+downloads/

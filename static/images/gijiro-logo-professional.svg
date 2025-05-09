@@ -1,0 +1,54 @@
+<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- グラデーション定義 -->
+  <defs>
+    <linearGradient id="textGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#2C7A7B"/>
+      <stop offset="50%" style="stop-color:#2B6CB0"/>
+      <stop offset="100%" style="stop-color:#434190"/>
+    </linearGradient>
+    <linearGradient id="robotGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#E6FFFA"/>
+      <stop offset="100%" style="stop-color:#EBF4FF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- スマートなロボットアイコン -->
+  <g transform="translate(30, 35)">
+    <!-- ロボットの頭部（よりシャープに） -->
+    <rect x="-12" y="-5" width="24" height="22" rx="3" 
+          fill="url(#robotGradient)" 
+          stroke="#2B6CB0" 
+          stroke-width="1.5"/>
+    <!-- テクノロジー的な装飾 -->
+    <line x1="-8" y1="0" x2="-4" y2="0" stroke="#2C7A7B" stroke-width="1"/>
+    <line x1="4" y1="0" x2="8" y2="0" stroke="#2C7A7B" stroke-width="1"/>
+    <!-- スマートな目 -->
+    <rect x="-7" y="5" width="4" height="2" fill="#2B6CB0"/>
+    <rect x="3" y="5" width="4" height="2" fill="#2B6CB0"/>
+  </g>
+
+  <!-- メインの文字（シャープな印象に） -->
+  <text x="55" y="62" 
+        font-family="'Noto Sans JP', 'Helvetica Neue', sans-serif" 
+        font-size="48" 
+        font-weight="bold"
+        fill="url(#textGradient)">
+    議事郎
+  </text>
+  
+  <!-- デジタルラインの装飾（より洗練された印象に） -->
+  <path d="M25 70 L165 70" 
+        stroke="#2B6CB0" 
+        stroke-width="1"
+        opacity="0.3"/>
+  
+  <path d="M25 74 L165 74" 
+        stroke="#2B6CB0" 
+        stroke-width="0.5"
+        opacity="0.2"/>
+        
+  <!-- AIを表現する幾何学的な装飾 -->
+  <circle cx="145" cy="35" r="2" fill="#2C7A7B" opacity="0.6"/>
+  <circle cx="153" cy="35" r="2" fill="#2B6CB0" opacity="0.6"/>
+  <circle cx="161" cy="35" r="2" fill="#434190" opacity="0.6"/>
+</svg>

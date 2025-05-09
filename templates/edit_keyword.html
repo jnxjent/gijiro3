@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>キーワード編集 | 議事郎</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(to right bottom, #a2ded0, #81c7d4);
+            font-family: "Helvetica Neue", sans-serif;
+        }
+
+        .container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            width: 640px;
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 24px;
+        }
+
+        label {
+            font-weight: bold;
+            display: block;
+            margin-top: 16px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            margin-top: 4px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+
+        .buttons {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 24px;
+        }
+
+        button {
+            padding: 8px 16px;
+            background-color: #4c6ef5;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #3b5bdb;
+        }
+
+        .cancel-btn {
+            background-color: #adb5bd;
+        }
+
+        .cancel-btn:hover {
+            background-color: #868e96;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>キーワード編集</h1>
+            <form method="POST" action="/update_keyword">
+                <input type="hidden" name="id" value="{{ keyword.id }}">
+
+                <label for="reading">読み方:</label>
+                <input type="text" id="reading" name="reading" value="{{ keyword.reading }}" required>
+
+                <label for="wrong_examples">ありがちな誤表記（カンマ区切り）:</label>
+                <input type="text" id="wrong_examples" name="wrong_examples" value="{{ keyword.wrong_examples or '' }}">
+
+                <label for="keyword">正しい表記:</label>
+                <input type="text" id="keyword" name="keyword" value="{{ keyword.keyword }}" required>
+
+                <div class="buttons">
+                    <button type="submit">保存</button>
+                    <button type="button" class="cancel-btn" onclick="window.location.href='/keywords';">キャンセル</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
