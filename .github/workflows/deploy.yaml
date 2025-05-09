@@ -1,23 +1,32 @@
+name: Deploy Gijiro3 (Web & Function)
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
 jobs:
   webapp:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      # ← ここで再度ログイン！
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - uses: actions/setup-python@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
       - name: Install dependencies
         run: |
           python -m venv .venv
-          source .venv/bin/activate    # ← 忘れずにパス指定
+          source .venv/bin/activate
           pip install --upgrade pip
           pip install -r requirements.txt
 
@@ -28,17 +37,19 @@ jobs:
           package: .
 
   functionapp:
+    needs: webapp
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      # ← ここでもログイン
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - uses: actions/setup-python@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
@@ -46,7 +57,7 @@ jobs:
         run: |
           cd ProcessAudioFunction
           python -m venv .venv
-          source .venv/bin/activate    # ← ここも正しく
+          source .venv/bin/activate
           pip install --upgrade pip
           pip install -r requirements.txt
 
