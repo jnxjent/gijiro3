@@ -23,12 +23,20 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: List files for debug
+        run: ls -R .
+
       - name: Install dependencies
         run: |
           python -m venv .venv
           source .venv/bin/activate
           pip install --upgrade pip
-          pip install -r requirements.txt
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "Error: requirements.txt not found in $(pwd)"
+            exit 1
+          fi
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v2
@@ -59,7 +67,12 @@ jobs:
           python -m venv .venv
           source .venv/bin/activate
           pip install --upgrade pip
-          pip install -r requirements.txt
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "Error: ProcessAudioFunction/requirements.txt not found"
+            exit 1
+          fi
 
       - name: Deploy to Azure Function
         uses: azure/functions-action@v1
