@@ -3,7 +3,7 @@ name: Deploy Gijiro3 (Web & Function)
 on:
   push:
     branches:
-      - main
+      - master
 
 jobs:
   # ───────────────────────────────────────────────────────────
@@ -45,7 +45,6 @@ jobs:
         uses: azure/webapps-deploy@v2
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
-          # ルート直下に Flask アプリがある場合は '.' で OK
           package: .
 
   # ───────────────────────────────────────────────────────────
