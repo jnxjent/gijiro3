@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>キーワード登録 | 議事郎</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(to right bottom, #a2ded0, #81c7d4);
+            font-family: "Helvetica Neue", sans-serif;
+        }
+
+        .container {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 40px;
+            padding: 40px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            width: 720px;
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1, h2 {
+            text-align: center;
+            color: #333;
+        }
+
+        label {
+            font-weight: bold;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 16px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+
+        button {
+            padding: 8px 16px;
+            background-color: #4c6ef5;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #3b5bdb;
+        }
+
+        .back-button {
+            display: block;
+            width: fit-content;
+            margin: 20px auto 40px;
+            background-color: #6c757d;
+        }
+
+        .back-button:hover {
+            background-color: #495057;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+            table-layout: fixed;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            vertical-align: middle;
+        }
+
+        th {
+            background-color: #f4f4f4;
+        }
+
+        td:nth-child(1),
+        td:nth-child(2),
+        td:nth-child(3) {
+            word-break: break-word;
+        }
+
+        td:nth-child(4) {
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        th:nth-child(1),
+        th:nth-child(2),
+        th:nth-child(3) {
+            width: 27%;
+        }
+
+        th:nth-child(4) {
+            width: 19%;
+        }
+
+        .action-btn {
+            display: inline-block;
+            margin-left: 4px;
+        }
+
+        .message {
+            color: red;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 左：登録フォーム -->
+        <div class="card">
+            <h1>キーワード登録</h1>
+
+            {% if message %}
+                <div class="message">・「{{ message }}」を削除しました。</div>
+            {% endif %}
+
+            <form method="POST" action="/register_keyword">
+                <label for="reading">読み方(ひらがなで入力):</label>
+                <input type="text" id="reading" name="reading" required>
+
+                <label for="wrong_examples">ありがちな誤表記（カンマ区切り）:</label>
+                <input type="text" id="wrong_examples" name="wrong_examples">
+
+                <label for="keyword">正しい表記:</label>
+                <input type="text" id="keyword" name="keyword" required>
+
+                <button type="submit">登録</button>
+            </form>
+        </div>
+
+        <!-- 右：登録済み一覧 -->
+        <div class="card">
+            <h2>登録済みキーワード</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>読み方</th>
+                        <th>誤表記</th>
+                        <th>正しい表記</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for keyword in keywords %}
+                    <tr>
+                        <td>{{ keyword.reading }}</td>
+                        <td>{{ keyword.wrong_examples or '' }}</td>
+                        <td>{{ keyword.keyword }}</td>
+                        <td>
+                            <form method="GET" action="/edit_keyword" class="action-btn">
+                                <input type="hidden" name="id" value="{{ keyword.id }}">
+                                <button type="submit">編集</button>
+                            </form>
+                            <form method="POST" action="/delete_keyword" class="action-btn">
+                                <input type="hidden" name="id" value="{{ keyword.id }}">
+                                <button type="submit" onclick="return confirm('削除してもよろしいですか？');">削除</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- トップページに戻るボタン -->
+    <div style="text-align: center;">
+        <button class="back-button" onclick="location.href='/'">トップページへ戻る</button>
+    </div>
+</body>
+</html>

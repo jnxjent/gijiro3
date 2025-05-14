@@ -1,0 +1,26 @@
+[
+  {
+    "id": "147c46f9-0a06-4b41-81b2-5b64fa570607",
+    "reading": "りゅうべ",
+    "wrong_examples": "粒米、粒弁",
+    "keyword": "m3"
+  },
+  {
+    "id": "055d01f0-7a69-4bd3-8c1e-f3ab03f93550",
+    "reading": "えんしゅうさいせき",
+    "wrong_examples": "演習在籍,演習成績,演習採石",
+    "keyword": "遠州砕石"
+  },
+  {
+    "id": "08267bd1-2b42-444a-9f33-1f9550ae1d66",
+    "reading": "ふれんどさにたりー",
+    "wrong_examples": "フレンドセンターリー,フレンドセンターリー、フレンドサミタリー、フレンドサインタリー",
+    "keyword": "フレンドサニタリー"
+  },
+  {
+    "id": "f0398a32-8704-4d43-86f1-a6f3791783c9",
+    "reading": "ちゃれんじあいてぃ",
+    "wrong_examples": "チャレンジアイティ",
+    "keyword": "Challenge 80th"
+  }
+]

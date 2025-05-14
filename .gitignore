@@ -1,0 +1,24 @@
+# 仮想環境除外
+antenv/
+.venv/
+
+# FFmpegバイナリ除外
+ffmpeg/
+
+# 出力ファイル除外
+output.tar.gz
+
+# その他
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+# Ignore ffmpeg binaries
+gijiro2/ffmpeg/
+
+# 一時オーディオファイル
+temp_audio.*
+ffmpeg/
+ffmpeg/
