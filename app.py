@@ -15,50 +15,47 @@ from flask_cors import CORS
 from routes import setup_routes
 from kowake import load_keywords_from_file
 
-# .env -----------------------------------------------------------------
+# .env 読み込み ------------------------------------------------------------
 load_dotenv()
 
 # ─────────────── ffmpeg / ffprobe バイナリ設定 ───────────────
 BASE_DIR = os.path.dirname(__file__)
 
 # フォルダ構成を「ffmpeg/bin/<os>/ffmpeg(.exe)」に合わせる
-BIN_ROOT    = os.path.join(BASE_DIR, "ffmpeg", "bin")   # ★ 修正ポイント
+BIN_ROOT    = os.path.join(BASE_DIR, "ffmpeg", "bin")
 LINUX_DIR   = os.path.join(BIN_ROOT, "linux")
 WINDOWS_DIR = os.path.join(BIN_ROOT, "win")
 
 if platform.system() == "Windows":
     ffmpeg_path  = os.path.join(WINDOWS_DIR, "ffmpeg.exe")
     ffprobe_path = os.path.join(WINDOWS_DIR, "ffprobe.exe")
-    # PATH へ追加（; 区切り）
     os.environ["PATH"] = f"{WINDOWS_DIR};" + os.environ.get("PATH", "")
 else:
     ffmpeg_path  = os.path.join(LINUX_DIR, "ffmpeg")
     ffprobe_path = os.path.join(LINUX_DIR, "ffprobe")
-    # PATH へ追加（: 区切り）
     os.environ["PATH"] = f"{LINUX_DIR}:" + os.environ.get("PATH", "")
 
-# pydub 用環境変数
 os.environ["FFMPEG_BINARY"]  = ffmpeg_path
 os.environ["FFPROBE_BINARY"] = ffprobe_path
 AudioSegment.converter       = ffmpeg_path
 AudioSegment.ffprobe         = ffprobe_path
 
-# 動作確認ログ
 print(f"Using FFMPEG_BINARY : {os.environ['FFMPEG_BINARY']}")
 print(f"Using FFPROBE_BINARY: {os.environ['FFPROBE_BINARY']}")
 print(f"PATH begins with    : {os.environ['PATH'].split(os.pathsep)[0]}")
 # ─────────────────────────────────────────────────────────────
-
 
 def create_app():
     """Flask アプリ生成 & ルート登録"""
     app = Flask(__name__)
     CORS(app)                       # CORS（プリフライト含む）許可
     app.url_map.strict_slashes = False
-    setup_routes(app)               # ルーティング
-    load_keywords_from_file()       # キーワード辞書のロード
-    return app
 
+    # --- 本来のルーティング登録 ---
+    setup_routes(app)               # routes.py に定義された /health, /process など
+    load_keywords_from_file()       # kowake.py のキーワード辞書ロード
+
+    return app
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))

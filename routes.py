@@ -1,3 +1,5 @@
+# routes.py
+
 from flask import request, render_template, jsonify, redirect, send_file
 import logging
 import os
@@ -6,12 +8,25 @@ import uuid
 from pathlib import Path
 from azure.storage.blob import BlobClient
 from storage import generate_upload_sas, enqueue_processing, upload_to_blob
-from kowake import get_all_keywords, add_keyword, delete_keyword_by_id, get_keyword_by_id, update_keyword_by_id
+from kowake import (
+    load_keywords_from_file,
+    get_all_keywords,
+    add_keyword,
+    delete_keyword_by_id,
+    get_keyword_by_id,
+    update_keyword_by_id,
+)
 
 def setup_routes(app):
     logger = logging.getLogger("routes")
     logging.basicConfig(level=logging.INFO)
 
+    # ─── ヘルスチェック ─────────────────────────────────────────────
+    @app.route("/health", methods=["GET"])
+    def health():
+        return jsonify({"status": "OK"}), 200
+
+    # ─── Azure AD コールバック ────────────────────────────────────────
     @app.route('/api/auth/callback/azure-ad', methods=['GET', 'POST'])
     def azure_ad_callback():
         try:
@@ -36,15 +51,16 @@ def setup_routes(app):
             logger.error(f"エラー発生: {e}")
             return jsonify({"error": f"エラー発生: {e}"}), 500
 
+    # ─── Web UI ────────────────────────────────────────────────────────
     @app.route('/', methods=['GET'])
     def index():
         return render_template("index.html")
 
-    # ✅ NEW: 処理結果ページ（ジョブID指定）
     @app.route('/results/<job_id>', methods=['GET'])
     def result_page(job_id):
         return render_template("result.html", job_id=job_id)
 
+    # ─── Blob SAS 取得 ─────────────────────────────────────────────────
     @app.route('/api/blob/sas', methods=['GET'])
     def api_blob_sas():
         blob_name = request.args.get('name')
@@ -54,6 +70,7 @@ def setup_routes(app):
         sas_info = generate_upload_sas(blob_name)
         return jsonify(sas_info)
 
+    # ─── ジョブ登録 ────────────────────────────────────────────────────
     @app.route('/api/process', methods=['POST'])
     def api_process():
         data = request.get_json()
@@ -111,7 +128,7 @@ def setup_routes(app):
 
         return jsonify({"error": "処理が完了しませんでした"}), 504
 
-    # --- キーワード管理ルート ---
+    # ─── キーワード管理 ─────────────────────────────────────────────────
     @app.route('/keywords', methods=['GET'])
     def keywords_page():
         keywords = get_all_keywords()

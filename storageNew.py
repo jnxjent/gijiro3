@@ -1,12 +1,10 @@
-# ...（省略されていない import はそのまま）...
+from azure.storage.blob import BlobClient
 
-def _normalize_blob_name(blob_name: str, *, force_audio_prefix: bool = False) -> str:
-    if force_audio_prefix:
-        if blob_name.startswith("audio/"):
-            return blob_name
-        if blob_name.startswith("word/") or blob_name.startswith("results/") or blob_name.startswith("settings/") or blob_name.startswith("processed/"):
-            return blob_name  # ⛔ audio/word/... にならないよう除外
-        return f"audio/{blob_name}"
-    return blob_name  # ✅ False の場合はそのまま使用
+def download_full_blob(blob_url: str, local_path: str):
+    blob = BlobClient.from_blob_url(blob_url)
+    # 1) ダウンロードストリームを取得
+    stream = blob.download_blob()  
 
-# ...（他の関数定義も同様、変更不要）...
+    # 2) 一括でバイナリを読み取り、ファイルに書き込む
+    with open(local_path, "wb") as f:
+        f.write(stream.readall())
