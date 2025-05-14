@@ -7,9 +7,9 @@ on:
 
 jobs:
   # ───────────────────────────────────────────────────────────
-  # 1) Login to Azure
+  # 1) Deploy Web App
   # ───────────────────────────────────────────────────────────
-  login:
+  webapp:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -19,16 +19,6 @@ jobs:
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-  # ───────────────────────────────────────────────────────────
-  # 2) Deploy Web App
-  # ───────────────────────────────────────────────────────────
-  webapp:
-    needs: login
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -48,14 +38,18 @@ jobs:
           package: .
 
   # ───────────────────────────────────────────────────────────
-  # 3) Deploy Function App
+  # 2) Deploy Function App
   # ───────────────────────────────────────────────────────────
   functionapp:
-    needs: login
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -63,8 +57,8 @@ jobs:
           python-version: '3.x'
 
       - name: Install function requirements
+        working-directory: ProcessAudioFunction
         run: |
-          cd ProcessAudioFunction
           python -m venv .venv
           source .venv/bin/activate
           pip install -r requirements.txt
