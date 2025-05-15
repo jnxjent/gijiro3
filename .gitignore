@@ -26,3 +26,4 @@ ffmpeg/
 **/ffprobe*
 myenv/
 testvenv/
+.env
