@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>議事郎</title>
+
+  <!-- ビルド／デプロイ時にCIやテンプレートエンジンで置き換える -->
+  <meta name="function-key" content="%FUNCTION_KEY%">
+
   <style>
     body {
       font-family: 'Helvetica', sans-serif;
@@ -123,14 +127,14 @@
     </div>
     <div class="file-input">
       <label for="word_file">ワード</label>
-      <input type="file" id="word_file" accept=".doc, .docx">
+      <input type="file" id="word_file" accept=".doc,.docx">
     </div>
     <button onclick="startUpload()">アップロード</button>
     <div class="status-msg" id="status_msg"></div>
 
     <div class="download-link">
       議事録テンプレートは 
-      <a href="https://midac19stoyhggrda5qr5ae.blob.core.windows.net/mom/word/議事録テンプレート_blueballoon.docx" 
+      <a href="https://yourblob.blob.core.windows.net/mom/word/議事録テンプレート_blueballoon.docx" 
          download rel="noopener noreferrer">
         こちら
       </a> 
@@ -144,13 +148,18 @@
   </div>
 
   <script>
+    // meta タグから Function Key を取得
+    const FUNCTION_KEY = document
+      .querySelector('meta[name="function-key"]')
+      .getAttribute('content');
+
     async function startUpload() {
       const audioInput = document.getElementById("audio_file");
-      const wordInput = document.getElementById("word_file");
-      const statusMsg = document.getElementById("status_msg");
+      const wordInput  = document.getElementById("word_file");
+      const statusMsg  = document.getElementById("status_msg");
 
       const audioFile = audioInput.files[0];
-      const wordFile = wordInput.files[0];
+      const wordFile  = wordInput.files[0];
 
       if (!audioFile || !wordFile) {
         alert("両方のファイルを選択してください。");
@@ -159,16 +168,16 @@
 
       statusMsg.innerText = "アップロード中...";
 
-      async function uploadToBlob(file, name, isAudio = true) {
-        const sasRes = await fetch(`/api/blob/sas?name=${encodeURIComponent(name)}`);
+      async function uploadToBlob(file, path, isAudio = true) {
+        const sasRes = await fetch(`/api/blob/sas?name=${encodeURIComponent(path)}`);
         const { uploadUrl, blobUrl } = await sasRes.json();
 
         const headers = { "x-ms-blob-type": "BlockBlob" };
-        const contentType = file.type || (isAudio 
-          ? "audio/mp4" 
-          : "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-
-        headers["Content-Type"] = contentType;
+        headers["Content-Type"] = file.type || 
+          (isAudio 
+            ? "audio/mp4" 
+            : "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          );
 
         await fetch(uploadUrl, {
           method: "PUT",
@@ -181,15 +190,18 @@
 
       try {
         const audioBlobUrl = await uploadToBlob(audioFile, "audio/" + audioFile.name, true);
-        const wordBlobUrl  = await uploadToBlob(wordFile, "word/" + wordFile.name, false);
+        const wordBlobUrl  = await uploadToBlob(wordFile,  "word/"  + wordFile.name,  false);
 
         statusMsg.innerText = "ジョブ登録中...";
 
         const res = await fetch("/api/process", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type":    "application/json",
+            "x-functions-key": FUNCTION_KEY
+          },
           body: JSON.stringify({
-            blobUrl: audioBlobUrl,
+            blobUrl:         audioBlobUrl,
             templateBlobUrl: wordBlobUrl
           })
         });
@@ -207,11 +219,12 @@
 
     async function pollForResult(jobId) {
       const statusMsg = document.getElementById("status_msg");
-      const interval = setInterval(async () => {
+      const interval  = setInterval(async () => {
         try {
-          const res = await fetch(`/api/process/${jobId}/status`);
+          const res = await fetch(`/api/process/${jobId}/status`, {
+            headers: { "x-functions-key": FUNCTION_KEY }
+          });
           if (res.status === 200) {
-            const data = await res.json();
             clearInterval(interval);
             statusMsg.innerText = "処理完了！結果をダウンロード中...";
             window.location.href = "/results/" + jobId;

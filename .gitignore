@@ -22,3 +22,7 @@ gijiro2/ffmpeg/
 temp_audio.*
 ffmpeg/
 ffmpeg/
+**/ffmpeg*
+**/ffprobe*
+myenv/
+testvenv/
