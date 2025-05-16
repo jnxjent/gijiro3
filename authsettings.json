@@ -1,0 +1,9 @@
+{
+  "platform": {
+    "enabled": false
+  },
+  "globalValidation": {
+    "requireAuthentication": false,
+    "unauthenticatedClientAction": "AllowAnonymous"
+  }
+}

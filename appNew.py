@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 app.py  –  Flask エントリポイント
 --------------------------------
@@ -9,55 +11,49 @@ app.py  –  Flask エントリポイント
 import os
 import platform
 from pydub import AudioSegment
-from flask import Flask
+from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from flask_cors import CORS
-from routes import setup_routes
-from kowake import load_keywords_from_file
 
-# .env 読み込み ------------------------------------------------------------
+# 環境変数を .env からロード
 load_dotenv()
 
-# ─────────────── ffmpeg / ffprobe バイナリ設定 ───────────────
-BASE_DIR = os.path.dirname(__file__)
-
-# フォルダ構成を「ffmpeg/bin/<os>/ffmpeg(.exe)」に合わせる
-BIN_ROOT    = os.path.join(BASE_DIR, "ffmpeg", "bin")
-LINUX_DIR   = os.path.join(BIN_ROOT, "linux")
-WINDOWS_DIR = os.path.join(BIN_ROOT, "win")
-
+# ffmpeg / ffprobe 実行ファイルパス設定（例: Linux と Windows で切り分け）
 if platform.system() == "Windows":
-    ffmpeg_path  = os.path.join(WINDOWS_DIR, "ffmpeg.exe")
-    ffprobe_path = os.path.join(WINDOWS_DIR, "ffprobe.exe")
-    os.environ["PATH"] = f"{WINDOWS_DIR};" + os.environ.get("PATH", "")
+    FFMPEG_BIN = os.getenv("FFMPEG_PATH_WIN", "ffmpeg")
+    FFPROBE_BIN = os.getenv("FFPROBE_PATH_WIN", "ffprobe")
 else:
-    ffmpeg_path  = os.path.join(LINUX_DIR, "ffmpeg")
-    ffprobe_path = os.path.join(LINUX_DIR, "ffprobe")
-    os.environ["PATH"] = f"{LINUX_DIR}:" + os.environ.get("PATH", "")
+    FFMPEG_BIN = os.getenv("FFMPEG_PATH_UNIX", "/home/site/ffmpeg-bin/bin/ffmpeg")
+    FFPROBE_BIN = os.getenv("FFPROBE_PATH_UNIX", "/home/site/ffmpeg-bin/bin/ffprobe")
 
-os.environ["FFMPEG_BINARY"]  = ffmpeg_path
-os.environ["FFPROBE_BINARY"] = ffprobe_path
-AudioSegment.converter       = ffmpeg_path
-AudioSegment.ffprobe         = ffprobe_path
+# pydub に実ファイルを認識させる
+os.environ["FFMPEG_BINARY"] = FFMPEG_BIN
+os.environ["FFPROBE_BINARY"] = FFPROBE_BIN
 
-print(f"Using FFMPEG_BINARY : {os.environ['FFMPEG_BINARY']}")
-print(f"Using FFPROBE_BINARY: {os.environ['FFPROBE_BINARY']}")
-print(f"PATH begins with    : {os.environ['PATH'].split(os.pathsep)[0]}")
-# ─────────────────────────────────────────────────────────────
+# Flask アプリの生成
+app = Flask(__name__)
+# 必要に応じて CORS の設定をカスタマイズ
+CORS(app)
 
-def create_app():
-    """Flask アプリ生成 & ルート登録"""
-    app = Flask(__name__)
-    CORS(app)                       # CORS（プリフライト含む）許可
-    app.url_map.strict_slashes = False
+# --- health check endpoint ---
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify(status="ok"), 200
 
-    # --- 本来のルーティング登録 ---
-    setup_routes(app)               # routes.py に定義された /health, /process など
-    load_keywords_from_file()       # kowake.py のキーワード辞書ロード
+# --- ここから他のルートや Blueprint を登録 ---
+# from your_module import blueprint_or_route_function
+# app.register_blueprint(blueprint_or_route_function)
 
-    return app
+# 例: POST で audio+WORD ファイルを受け取るルート
+# @app.route("/api/process-audio", methods=["POST"])
+# def process_audio():
+#     # ファイル受け取り→処理→レスポンス
+#     return jsonify(result="success"), 200
+
+# ---------------------------------------------------
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
-    from waitress import serve      # 本番は waitress で起動
-    serve(create_app(), host="0.0.0.0", port=port, threads=4)
+    # 本番用には waitress で起動
+    from waitress import serve
+    port = int(os.environ.get("PORT", 8000))
+    serve(app, host="0.0.0.0", port=port)
