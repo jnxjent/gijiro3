@@ -1,14 +1,16 @@
 {
-  "scriptFile": "__init__.py",
-  "entryPoint": "main",
   "bindings": [
     {
-      "name": "msg",
-      "type": "queueTrigger",
+      "authLevel": "anonymous",     ←★ここを anonymous に！
+      "type": "httpTrigger",
       "direction": "in",
-      "queueName": "audio-processing",
-      "connection": "AzureWebJobsStorage",
-      "decode": false
+      "name": "req",
+      "methods": ["post"]
+    },
+    {
+      "type": "http",
+      "direction": "out",
+      "name": "res"
     }
   ]
 }

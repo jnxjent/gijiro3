@@ -1,5 +1,3 @@
-# routes.py
-
 from flask import request, render_template, jsonify, redirect, send_file
 import logging
 import os
@@ -20,14 +18,26 @@ from kowake import (
 def setup_routes(app):
     logger = logging.getLogger("routes")
     logging.basicConfig(level=logging.INFO)
+    logger.info("✔ setup_routes() 開始")
 
-    # ─── ヘルスチェック ─────────────────────────────────────────────
+    # ─── トップページ ───────────────────────────
+    @app.route("/", methods=["GET"])
+    def index():
+        logger.info("✔ / にアクセスされました")
+        return render_template("index.html")
+
+    # ─── ヘルスチェック ───────────────────────
     @app.route("/health", methods=["GET"])
     def health():
+        logger.info("✔ /health にアクセス")
         return jsonify({"status": "OK"}), 200
 
-    # ─── Azure AD コールバック ────────────────────────────────────────
-    @app.route('/api/auth/callback/azure-ad', methods=['GET', 'POST'])
+    @app.route("/results/<job_id>", methods=["GET"])
+    def result_page(job_id):
+        return render_template("result.html", job_id=job_id)
+
+    # ─── Azure AD コールバック ───────────────
+    @app.route("/api/auth/callback/azure-ad", methods=["GET", "POST"])
     def azure_ad_callback():
         try:
             code = request.args.get("code")
@@ -51,31 +61,22 @@ def setup_routes(app):
             logger.error(f"エラー発生: {e}")
             return jsonify({"error": f"エラー発生: {e}"}), 500
 
-    # ─── Web UI ────────────────────────────────────────────────────────
-    @app.route('/', methods=['GET'])
-    def index():
-        return render_template("index.html")
-
-    @app.route('/results/<job_id>', methods=['GET'])
-    def result_page(job_id):
-        return render_template("result.html", job_id=job_id)
-
-    # ─── Blob SAS 取得 ─────────────────────────────────────────────────
-    @app.route('/api/blob/sas', methods=['GET'])
+    # ─── Blob SAS 発行 ────────────────────────
+    @app.route("/api/blob/sas", methods=["GET"])
     def api_blob_sas():
-        blob_name = request.args.get('name')
+        blob_name = request.args.get("name")
         if not blob_name:
             logger.error("SAS URL 生成エラー: name パラメーターがありません")
             return jsonify({"error": "name parameter is required"}), 400
         sas_info = generate_upload_sas(blob_name)
         return jsonify(sas_info)
 
-    # ─── ジョブ登録 ────────────────────────────────────────────────────
-    @app.route('/api/process', methods=['POST'])
+    # ─── 非同期ジョブ登録 ─────────────────────
+    @app.route("/api/process", methods=["POST"])
     def api_process():
         data = request.get_json()
-        blob_url = data.get('blobUrl')
-        template_blob_url = data.get('templateBlobUrl')
+        blob_url = data.get("blobUrl")
+        template_blob_url = data.get("templateBlobUrl")
 
         if not blob_url or not template_blob_url:
             logger.error("ジョブ登録エラー: blobUrl または templateBlobUrl が不足")
@@ -83,10 +84,10 @@ def setup_routes(app):
 
         job_id = uuid.uuid4().hex
         enqueue_processing(blob_url, template_blob_url, job_id)
-
+        logger.info(f"✔ ジョブ登録完了: job_id={job_id}")
         return jsonify({"jobId": job_id}), 202
 
-    @app.route('/api/process/<job_id>/status', methods=['GET'])
+    @app.route("/api/process/<job_id>/status", methods=["GET"])
     def api_status(job_id):
         result_blob = f"processed/{job_id}.docx"
         blob_client = BlobClient.from_connection_string(
@@ -103,7 +104,7 @@ def setup_routes(app):
             logger.error(f"ステータス確認中にエラー: {e}")
             return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/process/<job_id>/wait', methods=['GET'])
+    @app.route("/api/process/<job_id>/wait", methods=["GET"])
     def api_wait_for_result(job_id):
         max_wait_sec = 600
         interval_sec = 5
@@ -128,37 +129,37 @@ def setup_routes(app):
 
         return jsonify({"error": "処理が完了しませんでした"}), 504
 
-    # ─── キーワード管理 ─────────────────────────────────────────────────
-    @app.route('/keywords', methods=['GET'])
+    # ─── キーワード管理 ────────────────────────
+    @app.route("/keywords", methods=["GET"])
     def keywords_page():
         keywords = get_all_keywords()
-        return render_template('keywords.html', keywords=keywords)
+        return render_template("keywords.html", keywords=keywords)
 
-    @app.route('/register_keyword', methods=['POST'])
+    @app.route("/register_keyword", methods=["POST"])
     def register_keyword():
-        reading = request.form.get('reading')
-        wrong_examples = request.form.get('wrong_examples')
-        keyword = request.form.get('keyword')
+        reading = request.form.get("reading")
+        wrong_examples = request.form.get("wrong_examples")
+        keyword = request.form.get("keyword")
         add_keyword(reading, wrong_examples, keyword)
-        return redirect('/keywords')
+        return redirect("/keywords")
 
-    @app.route('/delete_keyword', methods=['POST'])
+    @app.route("/delete_keyword", methods=["POST"])
     def delete_keyword():
-        keyword_id = request.form.get('id')
+        keyword_id = request.form.get("id")
         delete_keyword_by_id(keyword_id)
-        return redirect('/keywords')
+        return redirect("/keywords")
 
-    @app.route('/edit_keyword', methods=['GET'])
+    @app.route("/edit_keyword", methods=["GET"])
     def edit_keyword():
-        keyword_id = request.args.get('id')
+        keyword_id = request.args.get("id")
         keyword = get_keyword_by_id(keyword_id)
-        return render_template('edit_keyword.html', keyword=keyword)
+        return render_template("edit_keyword.html", keyword=keyword)
 
-    @app.route('/update_keyword', methods=['POST'])
+    @app.route("/update_keyword", methods=["POST"])
     def update_keyword():
-        keyword_id = request.form.get('id')
-        reading = request.form.get('reading')
-        wrong_examples = request.form.get('wrong_examples')
-        keyword_text = request.form.get('keyword')
+        keyword_id = request.form.get("id")
+        reading = request.form.get("reading")
+        wrong_examples = request.form.get("wrong_examples")
+        keyword_text = request.form.get("keyword")
         update_keyword_by_id(keyword_id, reading, wrong_examples, keyword_text)
-        return redirect('/keywords')
+        return redirect("/keywords")
