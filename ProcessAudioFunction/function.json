@@ -7,8 +7,7 @@
       "type": "queueTrigger",
       "direction": "in",
       "queueName": "audio-processing",
-      "connection": "AzureWebJobsStorage",
-      "decode": false
+      "connection": "AzureWebJobsStorage"
     }
   ]
 }
