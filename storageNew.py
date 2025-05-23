@@ -1,148 +1,109 @@
-import os
-import json
-import base64
-import logging
-from datetime import datetime, timedelta
-from urllib.parse import unquote, urlparse
+from docx import Document
+import unicodedata
+import re
+import datetime
 
-from dotenv import load_dotenv
-from azure.core.pipeline.transport import RequestsTransport
-from azure.storage.blob import (
-    BlobSasPermissions,
-    BlobServiceClient,
-    ContentSettings,
-    generate_blob_sas,
-)
-from azure.storage.queue import QueueServiceClient
-from azure.core.exceptions import ResourceExistsError, HttpResponseError
-
-# ── .env 読み込み ───────────────────────────────
-load_dotenv()
-
-AZ_CONN_STR   = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-AZ_ACCOUNT    = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
-AZ_CONTAINER  = os.getenv("AZURE_STORAGE_CONTAINER_NAME")
-QUEUE_NAME    = os.getenv("AZURE_QUEUE_NAME", "audio-processing")
-
-# ── ロガー ─────────────────────────────────────
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("storage")
-
-# ── クライアント初期化（タイムアウト拡大） ───────
-transport = RequestsTransport(connection_timeout=600, read_timeout=600)
-blob_service_client = BlobServiceClient.from_connection_string(AZ_CONN_STR, transport=transport)
-container_client    = blob_service_client.get_container_client(AZ_CONTAINER)
-logger.info(f"Connected to Blob Storage: {AZ_ACCOUNT}/{AZ_CONTAINER}")
-
-queue_service = QueueServiceClient.from_connection_string(AZ_CONN_STR)
-queue_client  = queue_service.get_queue_client(QUEUE_NAME)
-logger.info(f"Initialized Queue client for: {QUEUE_NAME}")
-
-# ── ヘルパー関数 ────────────────────────────────
-
-def _normalize_blob_name(blob_name: str, *, force_audio_prefix: bool = False) -> str:
-    if force_audio_prefix and not blob_name.startswith("audio/"):
-        return f"audio/{blob_name}"
-    return blob_name
-
-def _extract_blob_name_from_url(blob_url: str) -> str:
-    parts = urlparse(blob_url).path.lstrip("/").split("/", 1)
-    if len(parts) != 2:
-        raise ValueError(f"Invalid blob URL: {blob_url}")
-    return unquote(parts[1])
-
-# ── Public API ─────────────────────────────────
-
-def generate_blob_url(blob_name: str) -> str:
-    return f"https://{AZ_ACCOUNT}.blob.core.windows.net/{AZ_CONTAINER}/{blob_name}"
-
-def upload_to_blob(
-    blob_name: str,
-    file_stream,
-    *,
-    add_audio_prefix: bool = True,
-    content_type: str = "application/octet-stream",
-) -> str:
-    blob_name = _normalize_blob_name(blob_name, force_audio_prefix=add_audio_prefix)
-    client = container_client.get_blob_client(blob_name)
-
-    try:
-        client.upload_blob(
-            file_stream,
-            overwrite=True,
-            content_settings=ContentSettings(content_type=content_type),
-        )
-    except Exception:
-        logger.exception(f"UPLOAD FAILED: {blob_name}")
-        raise
-
-    if not client.exists():
-        raise RuntimeError(f"Blob {blob_name} not found right after upload!")
-
-    logger.info(f"Uploaded blob: {blob_name}")
-    return generate_blob_url(blob_name)
-
-def download_blob(blob_name_or_url: str, download_path: str) -> str:
-    if blob_name_or_url.startswith("http"):
-        blob_name = _extract_blob_name_from_url(blob_name_or_url)
-    else:
-        blob_name = blob_name_or_url
-
-    client = container_client.get_blob_client(blob_name)
-    stream = client.download_blob()
-
-    with open(download_path, "wb") as fp:
-        for chunk in stream.chunks():
-            fp.write(chunk)
-
-    logger.info(f"Downloaded blob {blob_name} → {download_path}")
-    return download_path
-
-def generate_upload_sas(blob_name: str, expiry_hours: int = 1) -> dict:
-    blob_name = _normalize_blob_name(blob_name, force_audio_prefix=True)
-    sas_token = generate_blob_sas(
-        account_name=AZ_ACCOUNT,
-        container_name=AZ_CONTAINER,
-        blob_name=blob_name,
-        account_key=blob_service_client.credential.account_key,
-        permission=BlobSasPermissions(read=True, write=True, create=True),
-        expiry=datetime.utcnow() + timedelta(hours=expiry_hours),
-    )
-    url = generate_blob_url(blob_name)
-    return {"uploadUrl": f"{url}?{sas_token}", "blobUrl": url}
-
-def enqueue_processing(blob_url: str, template_blob_url: str, job_id: str) -> None:
+def normalize_text(text: str) -> str:
     """
-    明示的に audio-processing キューへメッセージを送信。
-    - メッセージを自前で Base64 エンコード
-    - キューがなければ自動作成
-    - send_message には余計なキーワードを渡さない
+    テキストを正規化し、表記ゆれを統一する。
+    - NFKC 正規化 (全角・半角統一)
+    - 末尾の「:」「：」を削除
+    - 前後の空白を削除
     """
-    try:
-        # キュー自動作成
-        try:
-            queue_client.create_queue()
-        except ResourceExistsError:
-            pass
+    return unicodedata.normalize("NFKC", text).strip().rstrip("：:")
 
-        # JSON → Base64
-        payload = json.dumps({
-            "job_id": job_id,
-            "blob_url": blob_url,
-            "template_blob_url": template_blob_url
-        })
-        encoded_msg = base64.b64encode(payload.encode("utf-8")).decode("utf-8")
+def clean_repeated_labels(label: str, value: str) -> str:
+    """
+    `value` の冒頭に `label` が繰り返されている場合、それを削除する。
+    - 記号 `:`, `：`, `-`, `～`, `ー` も考慮
+    - "1. - 議題:" のような形式も削除
+    """
+    label_norm = normalize_text(label)
+    # 文字列化＆NFKC正規化
+    val = unicodedata.normalize("NFKC", str(value)).strip()
 
-        # 余計なパラメータなしで送信
-        queue_client.send_message(encoded_msg)
-        logger.info(f"Enqueued job {job_id} to '{QUEUE_NAME}'")
+    # ① "- label:" や "label:" の繰り返しを削除
+    pattern = rf"^[-\s]*{re.escape(label_norm)}[\s:：\-～ー]*"
+    cleaned = re.sub(pattern, "", val).strip()
 
-    except HttpResponseError as e:
-        logger.error(f"Failed to enqueue job {job_id}: {e}", exc_info=True)
-        raise
+    # ② "数字. - ラベル:" の形式を削除
+    cleaned = re.sub(
+        rf"\d+\s*[\.．]\s*[-]?\s*{re.escape(label_norm)}\s*[:：]?", 
+        "", 
+        cleaned
+    ).strip()
 
-def upload_and_enqueue(local_path: str, blob_name: str, job_id: str) -> str:
-    with open(local_path, "rb") as fp:
-        blob_url = upload_to_blob(blob_name, fp)
-    enqueue_processing(blob_url, "", job_id)
-    return blob_url
+    return cleaned
+
+def table_writer(word_file_path: str, output_file_path: str, extracted_info: dict):
+    """
+    WORDファイルの表から左列(0列)を抽出し、extracted_info のラベルと照合。
+    一致する場合、右列(1列)に値を転記し、合致しない場合は空白のままにする。
+    """
+
+    doc = Document(word_file_path)
+
+    # ── (1) テンプレート側のラベルを正規化してマッピング ─────────────────
+    # 正規化ラベル → 元のセル文字列
+    label_map = {}
+    for table in doc.tables:
+        for row in table.rows:
+            if len(row.cells) < 2:
+                continue
+            raw_label = row.cells[0].text.strip()
+            norm_label = normalize_text(raw_label)
+            label_map[norm_label] = raw_label
+
+    print("[LOG] 正規化ラベルマップ:", label_map)
+
+    # ── (2) extracted_info のキーも正規化 ─────────────────────────────────
+    normalized_info = { normalize_text(k): v for k, v in extracted_info.items() }
+
+    # ── (3) 各セルを走査して転記 ─────────────────────────────────────────
+    for table in doc.tables:
+        for row in table.rows:
+            if len(row.cells) < 2:
+                continue
+
+            raw_label = row.cells[0].text.strip()
+            norm_label = normalize_text(raw_label)
+
+            if norm_label in normalized_info:
+                raw_value = normalized_info[norm_label]
+
+                # ── (A) 「出席者」は改行せずカンマ区切りに
+                if norm_label == normalize_text("出席者"):
+                    parts = re.split(r"[、,;\n\r]+", str(raw_value))
+                    raw_value = ", ".join([p.strip() for p in parts if p.strip()])
+
+                # ── (B) 「次回会議予定日時」は YYYY年MM月DD日 に整形
+                if norm_label == normalize_text("次回会議予定日時"):
+                    txt = str(raw_value)
+                    year = datetime.datetime.now().year
+                    def repl_date(m):
+                        m_str, d_str = m.group(1), m.group(2)
+                        return f"{year}年{int(m_str)}月{int(d_str)}日"
+                    raw_value = re.sub(r"(\d{1,2})月\s*(\d{1,2})日", repl_date, txt)
+
+                # ── (C) 重複ラベル削除
+                cleaned = clean_repeated_labels(raw_label, raw_value)
+
+                # ── (D) 行頭に「・」を追加（複数行対応）
+                lines = cleaned.splitlines()
+                bulleted = "\n".join(
+                    f"・{ln}" if ln and not ln.startswith("・") else ln
+                    for ln in lines
+                )
+
+                # 転記
+                row.cells[1].text = bulleted
+                print(f"[LOG] {raw_label}: {bulleted} を転記")
+
+            else:
+                # データなしは空白
+                row.cells[1].text = ""
+                print(f"[WARN] {raw_label} に対応するデータなし（空白に設定）")
+
+    # ── (4) ファイル保存 ────────────────────────────────────────────────
+    doc.save(output_file_path)
+    print("テーブルデータが保存されました:", output_file_path)

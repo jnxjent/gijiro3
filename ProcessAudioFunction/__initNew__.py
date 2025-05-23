@@ -5,6 +5,7 @@ import json
 import tempfile
 import logging
 import platform
+import subprocess                # ← 追加: ffmpeg を呼び出すため
 from pydub import AudioSegment
 
 # ─── ffmpeg / ffprobe をハードコードで設定 ───
@@ -37,8 +38,44 @@ async def main(msg: func.QueueMessage) -> None:
         template_blob_url = body["template_blob_url"]
         logger.info(f"Received job {job_id}, blob: {blob_url}, template: {template_blob_url}")
 
+        # ─── 新規追加: Blob を一度ローカルにダウンロード ───
+        tmp_mp4 = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+        download_blob(blob_url, tmp_mp4)
+        logger.info(f"Downloaded blob to {tmp_mp4}")
+
+        # ─── ① Fast-Start で moov atom を先頭に移動 ───
+        fixed_mp4 = tmp_mp4.replace(".mp4", "_fixed.mp4")
+        subprocess.run([
+            AudioSegment.converter, "-y",
+            "-i", tmp_mp4,
+            "-c", "copy",
+            "-movflags", "+faststart",
+            fixed_mp4
+        ], check=True)
+        logger.info(f"Fast-start applied, output {fixed_mp4}")
+
+        # ─── ② フォールバック：WAV に変換しておく（必要ならこちらを使う） ───
+        # wav_file = tmp_mp4.replace(".mp4", ".wav")
+        # subprocess.run([
+        #     AudioSegment.converter, "-y",
+        #     "-i", fixed_mp4,
+        #     "-acodec", "pcm_s16le",
+        #     "-ar", "16000",
+        #     wav_file
+        # ], check=True)
+        # audio_input = wav_file
+
+        # 通常は MP4 ファイルをそのまま渡します
+        audio_input = fixed_mp4
+
         # ✅ 1. 音声 → 整形済みテキスト生成（Deepgram + OpenAI）
-        transcript = await transcribe_and_correct(blob_url)
+        #    ここでローカルファイルを読み込むよう、transcribe_and_correct を修正してください
+        transcript = await transcribe_and_correct(audio_input)
+
+        # 後片付け
+        os.remove(tmp_mp4)
+        os.remove(fixed_mp4)
+        # if os.path.exists(wav_file): os.remove(wav_file)
 
         # ✅ 2. Wordテンプレート → 一時ファイルにDL
         tmp_template = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
@@ -55,7 +92,6 @@ async def main(msg: func.QueueMessage) -> None:
         process_document(template_path, output_docx, meeting_info)
 
         # ✅ 5. 結果を Blob にアップロード
-        #    バイナリモードで開いたファイルストリームを渡す
         with open(output_docx, "rb") as fstream:
             upload_to_blob(output_docx, fstream, add_audio_prefix=False)
 

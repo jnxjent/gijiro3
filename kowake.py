@@ -1,15 +1,15 @@
-# kowake.py – 非同期構成向け：Blob URL → テキスト整形処理
-
 import os
 import platform
 import shutil
+import subprocess
+import tempfile
 
 # ── 1) ffmpeg / ffprobe パス検出 ───────────────────────────────
-# まず環境変数から
+import shutil
+
 ffmpeg_path = os.getenv("FFMPEG_PATH")
 ffprobe_path = os.getenv("FFPROBE_PATH")
 
-# 環境変数がなければプロジェクト内のバイナリを探す
 if not (ffmpeg_path and ffprobe_path):
     BASE_DIR = os.path.dirname(__file__)
     BIN_ROOT = os.getenv("FFMPEG_HOME", os.path.join(BASE_DIR, "ffmpeg", "bin"))
@@ -23,25 +23,22 @@ if not (ffmpeg_path and ffprobe_path):
         ffmpeg_path  = os.path.join(tb, "ffmpeg")
         ffprobe_path = os.path.join(tb, "ffprobe")
 
-# それでも見つからなければシステムPATHを検索
 if not os.path.isfile(ffmpeg_path):
     ffmpeg_path = shutil.which("ffmpeg") or ffmpeg_path
 if not os.path.isfile(ffprobe_path):
     ffprobe_path = shutil.which("ffprobe") or ffprobe_path
 
-# ── 2) 環境変数と PATH に設定 ─────────────────────────────────
 os.environ["PATH"] = os.path.dirname(ffmpeg_path) + os.pathsep + os.environ.get("PATH", "")
 os.environ["FFMPEG_BINARY"]  = ffmpeg_path
 os.environ["FFPROBE_BINARY"] = ffprobe_path
 
-# ── 3) pydub に反映 ─────────────────────────────────────────────
+# ── 2) pydub に反映 ─────────────────────────────────────────────
 from pydub import AudioSegment
 AudioSegment.converter = ffmpeg_path
 AudioSegment.ffprobe  = ffprobe_path
 
 print(f"[INFO] Using ffmpeg:  {ffmpeg_path}")
 print(f"[INFO] Using ffprobe: {ffprobe_path}")
-print(f"[INFO] PATH begins with: {os.environ['PATH'].split(os.pathsep)[0]}")
 
 # ── 以下、従来の実装 ────────────────────────────────────────────
 import uuid
@@ -92,32 +89,51 @@ async def _transcribe_chunk(idx: int, chunk: AudioSegment) -> str:
         for u in response["results"]["utterances"]
     )
 
-async def transcribe_and_correct(audio_blob_url: str) -> str:
-    print(f"[DEBUG] transcribe_and_correct({audio_blob_url})")
+async def transcribe_and_correct(source: str) -> str:
+    """
+    source が URL なら Blob からダウンロードし、
+    ローカルパスなら直接読み込む。
+    Fast-Start を適用して moov atom エラーを回避。
+    """
+    # 1) URL 判定
+    if source.lower().startswith("http"):  
+        parsed = urlparse(source)
+        safe_path = "/".join(quote(p) for p in parsed.path.split("/"))
+        safe_url = f"{parsed.scheme}://{parsed.netloc}{safe_path}"
+        if parsed.query:
+            safe_url += f"?{parsed.query}"
+        local_audio = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(parsed.path)[1]).name
+        download_blob(safe_url, local_audio)
+    else:
+        local_audio = source
 
-    # URL を安全に再構成
-    parsed    = urlparse(audio_blob_url)
-    safe_path = "/".join(quote(p) for p in parsed.path.split("/"))
-    safe_url  = f"{parsed.scheme}://{parsed.netloc}{safe_path}"
-    if parsed.query:
-        safe_url += f"?{parsed.query}"
-    audio_blob_url = safe_url
+    # 2) Fast-Start 適用
+    ext = os.path.splitext(local_audio)[1]
+    fixed_audio = local_audio.replace(ext, f"_fixed{ext}")
+    subprocess.run([
+        ffmpeg_path, "-y",
+        "-i", local_audio,
+        "-c", "copy",
+        "-movflags", "+faststart",
+        fixed_audio
+    ], check=True)
 
-    # ダウンロード → 一時保存
-    local_audio_path = "temp_audio" + os.path.splitext(parsed.path)[1]  # 拡張子保持
-    download_blob(audio_blob_url, local_audio_path)
+    # 3) AudioSegment 読み込み
+    audio = AudioSegment.from_file(
+        fixed_audio,
+        format=ext.lstrip('.')
+    )
 
-    # 分割と並列実行
-    audio = AudioSegment.from_file(local_audio_path,
-                                   format=os.path.splitext(local_audio_path)[1][1:])  # 'm4a'→mp4
-    chunk_ms  = 10 * 60 * 1000
-    chunks    = [audio[i:i + chunk_ms] for i in range(0, len(audio), chunk_ms)]
+    # 4) 分割・並列処理
+    chunk_ms = 10 * 60 * 1000
+    chunks = [audio[i:i + chunk_ms] for i in range(0, len(audio), chunk_ms)]
 
     corrected = []
     batch_size = 6
     for b in range(0, len(chunks), batch_size):
         partials = await asyncio.gather(*[
-            _transcribe_chunk(idx + b, c) for idx, c in enumerate(chunks[b:b + batch_size])
+            _transcribe_chunk(idx + b, c) 
+            for idx, c in enumerate(chunks[b:b + batch_size])
         ])
         for text in partials:
             prompt = (
@@ -139,8 +155,13 @@ async def transcribe_and_correct(audio_blob_url: str) -> str:
             corrected.append(res["choices"][0]["message"]["content"])
 
     full_text = "\n".join(corrected)
-    return _apply_keyword_replacements(full_text)
 
+    # 5) 後片付け
+    if source.lower().startswith("http"):
+        os.remove(local_audio)
+    os.remove(fixed_audio)
+
+    return _apply_keyword_replacements(full_text)
 # …（以降キーワード管理や Blob 保存部分はそのまま）
 
 # ─── キーワード管理 ───────────────────────────────────────────
