@@ -1,5 +1,6 @@
 import os
 import json
+import base64
 import tempfile
 import logging
 import platform
@@ -72,7 +73,15 @@ TMP_DIR = tempfile.gettempdir()  # 一時ディレクトリ
 
 async def main(msg: func.QueueMessage) -> None:
     try:
-        body = json.loads(msg.get_body().decode())
+        # ─── JSON／Base64 自動判定デコード ───────────────────────────
+        raw = msg.get_body().decode("utf-8")
+        try:
+            body = json.loads(raw)
+        except json.JSONDecodeError:
+            # Base64 になっている場合はこちらでデコード
+            decoded = base64.b64decode(raw).decode("utf-8")
+            body = json.loads(decoded)
+
         job_id = body["job_id"]
         blob_url = body["blob_url"]
         template_blob_url = body["template_blob_url"]
@@ -116,7 +125,9 @@ async def main(msg: func.QueueMessage) -> None:
     except Exception:
         logger.exception("Error processing job")
         raise
+
     finally:
+        # 後片付け
         for f in [locals().get(x) for x in ("local_audio", "fixed_audio", "template_path", "local_docx")]:
             try:
                 if f and os.path.exists(f):
