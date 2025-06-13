@@ -1,8 +1,14 @@
+import logging
+
+# ─── モジュール読み込み時のログ ─────────────────────────
+logger = logging.getLogger("ProcessAudioFunction")
+logger.setLevel(logging.INFO)
+logger.info("▶▶ Module import start")
+
 import os
 import json
 import base64
 import tempfile
-import logging
 import platform
 import subprocess
 import uuid
@@ -18,7 +24,6 @@ from extraction import extract_meeting_info_and_speakers
 from docwriter import process_document
 
 # ─── ffmpeg / ffprobe 検出ロジック（ローカル⇆クラウド自動判定） ──────────
-
 FFMPEG_CANDIDATES: list[tuple[str, str]] = []
 
 # ① ENV
@@ -53,6 +58,7 @@ for ff, fp in FFMPEG_CANDIDATES:
         break
 
 if not ffmpeg_path:
+    logger.error("FFMPEG/FFPROBE binary not found. Set env vars or include binaries.")
     raise RuntimeError("FFMPEG/FFPROBE binary not found. Set env vars or include binaries.")
 
 # PATH へ追記し pydub へ反映
@@ -61,20 +67,27 @@ os.environ["FFMPEG_BINARY"] = ffmpeg_path
 os.environ["FFPROBE_BINARY"] = ffprobe_path
 AudioSegment.converter = ffmpeg_path
 AudioSegment.ffprobe = ffprobe_path
-print(f"[INIT] FFMPEG_BINARY  : {ffmpeg_path}")
-print(f"[INIT] FFPROBE_BINARY : {ffprobe_path}")
 
-# ─── ロガー設定 ─────────────────────────────────────────────
-logger = logging.getLogger("ProcessAudioFunction")
-logger.setLevel(logging.INFO)
+# ffmpeg パス検出結果をログ
+logger.info(f"▶▶ Using FFMPEG_BINARY  : {ffmpeg_path}")
+logger.info(f"▶▶ Using FFPROBE_BINARY : {ffprobe_path}")
 
-TMP_DIR = tempfile.gettempdir()  # 一時ディレクトリ
+# ─── モジュール読み込み完了ログ ─────────────────────────
+logger.info("▶▶ Module import success")
 
+# ─── 一時ディレクトリ準備 ─────────────────────────────────
+TMP_DIR = tempfile.gettempdir()
 
 async def main(msg: func.QueueMessage) -> None:
+    # ─── 関数起動時のログ ───────────────────────────────────
+    logger.info("▶▶ Function invoked")
+
+    # ─── 生のメッセージをまずログ ───────────────────────────────
+    raw = msg.get_body().decode("utf-8", errors="replace")
+    logger.info("▶▶ RAW payload: %s", raw)
+
     try:
-        # ─── JSON／Base64 自動判定デコード ───────────────────────────
-        raw = msg.get_body().decode("utf-8")
+        # ─── JSON／Base64 自動判定デコード ─────────────────────────
         try:
             body = json.loads(raw)
         except json.JSONDecodeError:
@@ -104,19 +117,23 @@ async def main(msg: func.QueueMessage) -> None:
             "+faststart",
             fixed_audio,
         ], check=True)
+        logger.info(f"▶▶ Faststart applied: {fixed_audio}")
 
         # 3. 文字起こし
         transcript = await transcribe_and_correct(fixed_audio)
+        logger.info("▶▶ Transcription completed")
 
         # 4. テンプレート DL
         template_path = os.path.join(TMP_DIR, f"{uuid.uuid4()}_template.docx")
         download_blob(template_blob_url, template_path)
+        logger.info("▶▶ Template downloaded")
 
         # 5. 情報抽出 → Word
         meeting_info = await extract_meeting_info_and_speakers(transcript, template_path)
         local_docx = os.path.join(TMP_DIR, f"{job_id}.docx")
         blob_docx = f"processed/{job_id}.docx"
         process_document(template_path, local_docx, meeting_info)
+        logger.info("▶▶ Document processed")
 
         with open(local_docx, "rb") as fp:
             upload_to_blob(blob_docx, fp, add_audio_prefix=False)
