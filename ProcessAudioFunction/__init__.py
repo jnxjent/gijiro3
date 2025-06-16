@@ -9,10 +9,8 @@ import os
 import json
 import base64
 import tempfile
-import platform
 import subprocess
 import uuid
-import shutil  # ← NameError 修正で追加
 from pathlib import Path
 
 from pydub import AudioSegment
@@ -23,56 +21,27 @@ from kowake import transcribe_and_correct
 from extraction import extract_meeting_info_and_speakers
 from docwriter import process_document
 
-# ─── ffmpeg / ffprobe 検出ロジック（ローカル⇆クラウド自動判定） ──────────
-FFMPEG_CANDIDATES: list[tuple[str, str]] = []
+# ─── ffmpeg / ffprobe 検出ロジック（環境変数のみ） ──────────
+ffmpeg_path = os.getenv("FFMPEG_BINARY", "")
+ffprobe_path = os.getenv("FFPROBE_BINARY", "")
 
-# ① ENV
-ff_env = os.getenv("FFMPEG_PATH")
-fp_env = os.getenv("FFPROBE_PATH")
-if ff_env and fp_env:
-    FFMPEG_CANDIDATES.append((ff_env, fp_env))
-
-# ② リポジトリ同梱
-BASE_DIR = Path(__file__).resolve().parent
-BIN_ROOT = BASE_DIR / "ffmpeg" / "bin"
-if platform.system() == "Windows":
-    tb = BIN_ROOT / "win"
-    FFMPEG_CANDIDATES.append((str(tb / "ffmpeg.exe"), str(tb / "ffprobe.exe")))
-elif platform.system() == "Darwin":
-    tb = BIN_ROOT / "mac"
-    FFMPEG_CANDIDATES.append((str(tb / "ffmpeg"), str(tb / "ffprobe")))
-else:  # Linux
-    tb = BIN_ROOT / "linux"
-    FFMPEG_CANDIDATES.append((str(tb / "ffmpeg"), str(tb / "ffprobe")))
-
-# ③ PATH
-FFMPEG_CANDIDATES.append((shutil.which("ffmpeg") or "", shutil.which("ffprobe") or ""))
-
-# ④ Azure Functions 既定
-FFMPEG_CANDIDATES.append(("/home/site/ffmpeg-bin/bin/ffmpeg", "/home/site/ffmpeg-bin/bin/ffprobe"))
-
-ffmpeg_path, ffprobe_path = "", ""
-for ff, fp in FFMPEG_CANDIDATES:
-    if ff and os.path.isfile(ff) and fp and os.path.isfile(fp):
-        ffmpeg_path, ffprobe_path = ff, fp
-        break
-
-if not ffmpeg_path:
-    logger.error("FFMPEG/FFPROBE binary not found. Set env vars or include binaries.")
+if not (ffmpeg_path and ffprobe_path and os.path.isfile(ffmpeg_path) and os.path.isfile(ffprobe_path)):
+    logger.error("FFMPEG/FFPROBE binary not found. Check FFMPEG_BINARY and FFPROBE_BINARY env vars.")
     raise RuntimeError("FFMPEG/FFPROBE binary not found. Set env vars or include binaries.")
 
-# PATH へ追記し pydub へ反映
-os.environ["PATH"] = os.path.dirname(ffmpeg_path) + os.pathsep + os.environ.get("PATH", "")
+# PATH にディレクトリを追加（オプション）
+bin_dir = str(Path(ffmpeg_path).parent)
+os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
+
+# pydub 用の設定
 os.environ["FFMPEG_BINARY"] = ffmpeg_path
 os.environ["FFPROBE_BINARY"] = ffprobe_path
 AudioSegment.converter = ffmpeg_path
-AudioSegment.ffprobe = ffprobe_path
+AudioSegment.ffprobe   = ffprobe_path
 
-# ffmpeg パス検出結果をログ
+# ffmpeg / ffprobe パス検出結果をログ
 logger.info(f"▶▶ Using FFMPEG_BINARY  : {ffmpeg_path}")
 logger.info(f"▶▶ Using FFPROBE_BINARY : {ffprobe_path}")
-
-# ─── モジュール読み込み完了ログ ─────────────────────────
 logger.info("▶▶ Module import success")
 
 # ─── 一時ディレクトリ準備 ─────────────────────────────────
@@ -94,9 +63,9 @@ async def main(msg: func.QueueMessage) -> None:
             decoded = base64.b64decode(raw).decode("utf-8")
             body = json.loads(decoded)
 
-        job_id = body["job_id"]
-        blob_url = body["blob_url"]
-        template_blob_url = body["template_blob_url"]
+        job_id              = body["job_id"]
+        blob_url            = body["blob_url"]
+        template_blob_url   = body["template_blob_url"]
         logger.info(f"Received job {job_id}, blob: {blob_url}, template: {template_blob_url}")
 
         # 1. 音声を /tmp にダウンロード
@@ -110,12 +79,9 @@ async def main(msg: func.QueueMessage) -> None:
         subprocess.run([
             ffmpeg_path,
             "-y",
-            "-i",
-            local_audio,
-            "-c",
-            "copy",
-            "-movflags",
-            "+faststart",
+            "-i", local_audio,
+            "-c", "copy",
+            "-movflags", "+faststart",
             fixed_audio,
         ], check=True, timeout=60)
         logger.info(f"▶▶ STEP2: Faststart applied: {fixed_audio}")
@@ -135,7 +101,7 @@ async def main(msg: func.QueueMessage) -> None:
         logger.info("▶▶ STEP5-1: Starting document processing")
         meeting_info = await extract_meeting_info_and_speakers(transcript, template_path)
         local_docx = os.path.join(TMP_DIR, f"{job_id}.docx")
-        blob_docx = f"processed/{job_id}.docx"
+        blob_docx  = f"processed/{job_id}.docx"
         process_document(template_path, local_docx, meeting_info)
         logger.info("▶▶ STEP5-2: Document processed")
 
@@ -149,9 +115,10 @@ async def main(msg: func.QueueMessage) -> None:
 
     finally:
         # 後片付け
-        for f in [locals().get(x) for x in ("local_audio", "fixed_audio", "template_path", "local_docx")]:
-            try:
-                if f and os.path.exists(f):
-                    os.remove(f)
-            except Exception:
-                pass
+        for var in ("local_audio", "fixed_audio", "template_path", "local_docx"):
+            path = locals().get(var)
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
