@@ -22,7 +22,6 @@ ffprobe_path = os.getenv("FFPROBE_PATH")
 if not (ffmpeg_path and ffprobe_path):
     BASE_DIR = os.path.dirname(__file__)
     BIN_ROOT = os.getenv("FFMPEG_HOME", os.path.join(BASE_DIR, "ffmpeg", "bin"))
-
     if platform.system() == "Windows":
         tb = os.path.join(BIN_ROOT, "win")
         ffmpeg_path = os.path.join(tb, "ffmpeg.exe")
@@ -84,9 +83,9 @@ async def _transcribe_chunk(idx: int, chunk: AudioSegment) -> str:
     )
 
     return "\n".join(
-        f"[Speaker {u['speaker']}] {u['transcript']}" for u in response["results"]["utterances"]
+        f"[Speaker {u['speaker']}] {u['transcript']}"
+        for u in response["results"]["utterances"]
     )
-
 
 async def transcribe_and_correct(source: str) -> str:
     """音声を文字起こしして整形するメイン関数"""
@@ -104,33 +103,31 @@ async def transcribe_and_correct(source: str) -> str:
     else:
         local_audio = source
 
-    # 2) Fast‑Start 適用
+    # 2) Fast-Start 適用
     ext = os.path.splitext(local_audio)[1]
     fixed_audio = os.path.join(TMP_DIR, f"{uuid.uuid4()}_fixed{ext}")
     subprocess.run([
-        ffmpeg_path,
-        "-y",
-        "-i",
-        local_audio,
-        "-c",
-        "copy",
-        "-movflags",
-        "+faststart",
-        fixed_audio,
+        ffmpeg_path, "-y", "-i", local_audio,
+        "-c", "copy", "-movflags", "+faststart", fixed_audio
     ], check=True)
 
     # 3) AudioSegment 読み込み
     audio = AudioSegment.from_file(fixed_audio, format=ext.lstrip("."))
 
-    # 4) 分割・並列処理
-    chunk_ms = 10 * 60 * 1000  # 10 分ごと
-    chunks = [audio[i : i + chunk_ms] for i in range(0, len(audio), chunk_ms)]
+    # 4) 分割・並列処理（10分ごと＋前後1分の重複）
+    chunk_length_ms = 10 * 60 * 1000      # 10 分
+    overlap_ms      = 1  * 60 * 1000      #  1 分
+    step_ms         = chunk_length_ms - overlap_ms
+    chunks = []
+    for start in range(0, len(audio), step_ms):
+        end = min(start + chunk_length_ms, len(audio))
+        chunks.append(audio[start:end])
 
     corrected = []
     batch_size = 6
     for b in range(0, len(chunks), batch_size):
         partials = await asyncio.gather(
-            *[_transcribe_chunk(idx + b, c) for idx, c in enumerate(chunks[b : b + batch_size])]
+            *[_transcribe_chunk(idx + b, c) for idx, c in enumerate(chunks[b:b+batch_size])]
         )
         for text in partials:
             prompt = (
@@ -144,7 +141,7 @@ async def transcribe_and_correct(source: str) -> str:
                 engine=DEPLOYMENT_ID,
                 messages=[
                     {"role": "system", "content": "あなたは日本語整形アシスタントです。"},
-                    {"role": "user", "content": prompt},
+                    {"role": "user",   "content": prompt},
                 ],
                 temperature=0,
                 max_tokens=4000,
@@ -155,34 +152,26 @@ async def transcribe_and_correct(source: str) -> str:
 
     # 5) 後片付け
     if source.lower().startswith("http"):
-        try:
-            os.remove(local_audio)
-        except FileNotFoundError:
-            pass
-    try:
-        os.remove(fixed_audio)
-    except FileNotFoundError:
-        pass
+        try: os.remove(local_audio)
+        except FileNotFoundError: pass
+    try: os.remove(fixed_audio)
+    except FileNotFoundError: pass
 
     return _apply_keyword_replacements(full_text)
-
 
 # ─── キーワード管理 ─────────────────────────────────────────
 _KEYWORDS_DB: list[dict] = []
 BLOB_JSON_PATH = "settings/keywords.json"
 LOCAL_TEMP_JSON = os.path.join(TMP_DIR, "keywords.json")
 
-
 def get_all_keywords():
     return _KEYWORDS_DB
-
 
 def get_keyword_by_id(keyword_id):
     for k in _KEYWORDS_DB:
         if k["id"] == keyword_id:
             return k
     return None
-
 
 def add_keyword(reading, wrong_examples, keyword):
     _KEYWORDS_DB.append({
@@ -193,12 +182,10 @@ def add_keyword(reading, wrong_examples, keyword):
     })
     _save_keywords_to_blob()
 
-
 def delete_keyword_by_id(keyword_id):
     global _KEYWORDS_DB
     _KEYWORDS_DB = [k for k in _KEYWORDS_DB if k["id"] != keyword_id]
     _save_keywords_to_blob()
-
 
 def update_keyword_by_id(keyword_id, reading, wrong_examples, keyword):
     for k in _KEYWORDS_DB:
@@ -207,18 +194,17 @@ def update_keyword_by_id(keyword_id, reading, wrong_examples, keyword):
             break
     _save_keywords_to_blob()
 
-
 def _apply_keyword_replacements(text: str) -> str:
     for kw in _KEYWORDS_DB:
         correct = kw["keyword"]
-        targets = [kw["reading"]] + [e.strip() for e in kw.get("wrong_examples", "").split(",") if e.strip()]
+        targets = [kw["reading"]] + [
+            e.strip() for e in kw.get("wrong_examples", "").split(",") if e.strip()
+        ]
         for tgt in targets:
             text = re.sub(re.escape(tgt), correct, text)
     return text
 
-
 # ─── Blob 連携 ──────────────────────────────────────────────
-
 def load_keywords_from_file():
     global _KEYWORDS_DB
     try:
@@ -230,7 +216,6 @@ def load_keywords_from_file():
     except Exception as e:
         print(f"[WARN] キーワード読込失敗: {e}")
         _KEYWORDS_DB = []
-
 
 def _save_keywords_to_blob():
     try:
