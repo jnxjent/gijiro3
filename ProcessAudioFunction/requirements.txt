@@ -55,9 +55,9 @@ pillow==11.1.0
 psutil==6.1.1
 pydub
 waitress>=2.1.0
-azure-storage-queue>=12.0.0
+
 azure-functions
-requests
+
 azure-storage-queue>=12.5.0
 
 
