@@ -15,6 +15,15 @@ def process_document(word_file_path: str, output_file_path: str, extracted_info:
     print(f"[INFO] 出力ファイル: {output_file_path}")
     print(f"[INFO] 抽出情報: {len(extracted_info)} 個")
 
+    # --- 追加デバッグ: extracted_info のキーと値のサイズ/タイプを可視化
+    debug_map = {}
+    for k, v in extracted_info.items():
+        if isinstance(v, str):
+            debug_map[k] = len(v)
+        else:
+            debug_map[k] = type(v).__name__
+    print(f"[DEBUG] extracted_info keys & sizes: {debug_map}")
+
     Path(output_file_path).parent.mkdir(parents=True, exist_ok=True)
 
     if not extracted_info:
@@ -27,9 +36,15 @@ def process_document(word_file_path: str, output_file_path: str, extracted_info:
         print(f"[ERROR] テーブル更新中にエラー: {e}")
         raise
 
-    replaced_transcription = extracted_info.get("replaced_transcription", "")
+    # --- 議事録本文の取得 (複数キーに対応)
+    replaced_transcription = (
+        extracted_info.get("replaced_transcription")
+        or extracted_info.get("transcription")
+        or extracted_info.get("full_transcript", "")
+    )
+    print(f"[DEBUG] replaced_transcription length: {len(replaced_transcription)}")
     if not replaced_transcription:
-        print("[WARNING] replaced_transcription が空のため、議事録本文は未挿入の可能性があります")
+        print("[WARNING] 本文文字列が空です。抽出キー名や前段の結合処理を確認してください。")
 
     try:
         # ✅ 議事録本文の挿入
@@ -38,7 +53,7 @@ def process_document(word_file_path: str, output_file_path: str, extracted_info:
         print(f"[ERROR] 議事録本文挿入中にエラー: {e}")
         raise
 
-    # ✅ ファイルが正常に出力されたかチェック
+    # ✅ ファイル生成後の検証
     if not os.path.exists(output_file_path):
         raise RuntimeError(f"[ERROR] Wordファイルが生成されていません: {output_file_path}")
 
